@@ -1,0 +1,51 @@
+# CashFlow Radar configuration.
+# Every number that drives a business decision lives here, so it can be argued about in review.
+
+seed: 42
+
+data:
+  # "synthetic" (default, ~35k invoices with drift) or "ibm" (the real 2,466-invoice IBM sample)
+  source: synthetic
+  ibm_path: data/raw/ibm_accounts_receivable.csv
+  synthetic:
+    n_customers: 250
+    start: "2021-01-01"
+    end: "2024-12-31"
+    out_dir: data/synthetic
+  # The IBM sample has toy invoice amounts (median ~60). We read them as hundreds of euros so the
+  # cost model below gives meaningful decisions. Purely a unit assumption, documented in the README.
+  amount_scale:
+    ibm: 100
+    synthetic: 1
+
+split:
+  # Chronological split by invoice date. Train invoices whose outcome (settlement) is not yet
+  # known at the validation cut-off are purged, exactly as they would be in production.
+  train_frac: 0.6
+  valid_frac: 0.2      # used for calibration, threshold choice and early stopping; test = rest
+
+features:
+  recent_window: 3      # "last N settled invoices" for trend features
+
+tuning:
+  n_trials: 30          # Optuna trials (CI uses --fast which sets 5)
+  cv_folds: 4           # expanding-window folds inside the training period
+
+cost_model:
+  # Cost of one proactive collector touch (email + call before the due date).
+  cost_per_touch: 25.0
+  # Annual cost of capital used to price each day of delay.
+  cost_of_capital: 0.10
+  # Share of late invoices that end up written off, as a fraction of the amount.
+  bad_debt_rate_if_late: 0.01
+  # Assumed share of lateness a proactive touch removes (days late and write-off risk).
+  # This is the key business assumption: replace it with an A/B test result when one exists.
+  touch_effectiveness: 0.35
+
+simulation:
+  # Collectors can proactively touch this share of newly issued invoices each week.
+  capacity_share: 0.15
+
+paths:
+  artifacts: artifacts
+  mlflow_uri: mlruns

@@ -1,0 +1,14 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+artifacts/
+mlruns/
+data/synthetic/
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.env
+dist-static/
+cashflow-radar-dashboard.html

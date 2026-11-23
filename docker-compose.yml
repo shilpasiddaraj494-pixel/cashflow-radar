@@ -1,0 +1,60 @@
+# Full stack: Postgres, a one-shot trainer (train -> score -> load worklist), the API and the dashboard.
+#   docker compose up --build        then open http://localhost:8080
+#   SOURCE=ibm docker compose up     to use the real IBM sample instead of synthetic data
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cfr
+      POSTGRES_PASSWORD: cfr
+      POSTGRES_DB: cashflow_radar
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cfr -d cashflow_radar"]
+      interval: 5s
+      retries: 10
+
+  trainer:
+    build: { context: ., dockerfile: docker/Dockerfile.api }
+    command: >
+      sh -c "python -m cashflow_radar.train --source $${SOURCE:-synthetic} &&
+             python -m cashflow_radar.score --source $${SOURCE:-synthetic}"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://cfr:cfr@db:5432/cashflow_radar
+      SOURCE: ${SOURCE:-synthetic}
+    volumes:
+      - artifacts:/app/artifacts
+      - mlruns:/app/mlruns
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    build: { context: ., dockerfile: docker/Dockerfile.api }
+    environment:
+      DATABASE_URL: postgresql+psycopg2://cfr:cfr@db:5432/cashflow_radar
+    ports: ["8000:8000"]
+    volumes:
+      - artifacts:/app/artifacts
+    depends_on:
+      db: { condition: service_healthy }
+      trainer: { condition: service_completed_successfully }
+
+  web:
+    build: { context: ., dockerfile: docker/Dockerfile.web }
+    ports: ["8080:80"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  mlflow:
+    # same image as the trainer, so the MLflow version matches the tracking database
+    build: { context: ., dockerfile: docker/Dockerfile.api }
+    command: mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:////app/mlruns/mlflow.db
+    ports: ["5000:5000"]
+    volumes: [mlruns:/app/mlruns]
+    profiles: [tools]
+
+volumes:
+  pgdata:
+  artifacts:
+  mlruns:
